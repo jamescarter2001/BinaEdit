@@ -9,7 +9,7 @@ import (
 // #include "stringtable.h"
 import "C"
 
-type Header struct {
+type BINAHeader struct {
 	Signature  [4]byte
 	Version    [3]byte
 	EndianFlag byte
@@ -31,16 +31,34 @@ type NodeDataHeader struct {
 	Padding1             uint16
 }
 
+type NodeData struct {
+	AdditionalData []byte
+	DataBlock      []byte
+	StringTable    string
+	OffsetTable    string
+}
+
+type Node struct {
+	Header     NodeHeader
+	DataHeader NodeDataHeader
+	Data       NodeData
+}
+
+type BINA struct {
+	Header BINAHeader
+	Nodes  []Node
+}
+
 func ReadString(stringTable string, offset int) string {
 	cstr := C.readString(C.CString(stringTable), C.int(offset))
 	return C.GoString(cstr)
 }
 
-func Read(path string) {
+func Read(path string) BINA {
 	f, err := os.Open(path)
 
 	if err == nil {
-		header := Header{}
+		header := BINAHeader{}
 
 		err := binary.Read(f, binary.LittleEndian, &header)
 
@@ -74,14 +92,19 @@ func Read(path string) {
 					binary.Read(f, binary.LittleEndian, &nodeDataHeader)
 
 					additionalData := make([]byte, nodeDataHeader.AdditionalDataLength)
-					dataBlock := make([]byte, nodeHeader.Length-(0x18+uint32(nodeDataHeader.AdditionalDataLength)))
+					data := make([]byte, nodeHeader.Length-(0x18+uint32(nodeDataHeader.AdditionalDataLength)))
 
 					binary.Read(f, binary.LittleEndian, &additionalData)
-					binary.Read(f, binary.LittleEndian, &dataBlock)
+					binary.Read(f, binary.LittleEndian, &data)
 
-					stringTable := string(dataBlock[nodeDataHeader.StringTableOffset : nodeDataHeader.StringTableOffset+nodeDataHeader.StringTableLength])
+					offsetTableOffset := nodeDataHeader.StringTableOffset + nodeDataHeader.StringTableLength
 
-					fmt.Printf("%s\n", C.GoString(C.readString(C.CString(stringTable), 12)))
+					// dataBlock := data[:nodeDataHeader.StringTableOffset]
+					stringTable := string(data[nodeDataHeader.StringTableOffset:offsetTableOffset])
+					offsetTable := string(data[offsetTableOffset : offsetTableOffset+nodeDataHeader.OffsetTableLength])
+
+					fmt.Printf("%s\n", ReadString(stringTable, 0xC))
+					fmt.Printf("Offset Count: %d\n", len(offsetTable))
 				}
 
 				fmt.Printf("----------------\n")
