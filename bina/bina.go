@@ -9,6 +9,8 @@ import (
 // #include "stringtable.h"
 import "C"
 
+// raw --
+
 type BINAHeader struct {
 	Signature  [4]byte
 	Version    [3]byte
@@ -30,6 +32,8 @@ type NodeDataHeader struct {
 	AdditionalDataLength uint16
 	Padding1             uint16
 }
+
+// --
 
 type NodeData struct {
 	AdditionalData []byte
@@ -54,6 +58,23 @@ func ReadString(stringTable string, offset int) string {
 	return C.GoString(cstr)
 }
 
+func Print(file BINA) {
+	// INFO
+	fmt.Printf("Signature: %s\n", file.Header.Signature)
+	fmt.Printf("Version: %s\n", file.Header.Version)
+	fmt.Printf("Endian: %c\n", file.Header.EndianFlag)
+	fmt.Printf("Node Count: %d\n", file.Header.NodeCount)
+
+	for i, n := range file.Nodes {
+		fmt.Printf("----------------\n")
+		fmt.Printf("Node %d\n\n", i+1)
+		fmt.Printf("Node Type: %s\n", n.Header.Signature)
+		fmt.Printf("Node Length: %d\n", n.Header.Length)
+		fmt.Printf("Offset Count: %d\n", len(n.Data.OffsetTable))
+		fmt.Printf("----------------\n")
+	}
+}
+
 func Read(path string) BINA {
 	f, err := os.Open(path)
 
@@ -66,25 +87,13 @@ func Read(path string) BINA {
 			fmt.Println(err)
 		}
 
-		// headerSize := binary.Size(header)
-
 		if string(header.Signature[:]) == "BINA" {
-			// INFO
-			fmt.Printf("Signature: %s\n", header.Signature)
-			fmt.Printf("Version: %s\n", header.Version)
-			fmt.Printf("Endian: %c\n", header.EndianFlag)
-			fmt.Printf("Node Count: %d\n", header.NodeCount)
+			var nodeList []Node
 
 			for i := 0; i < int(header.NodeCount); i++ {
-				fmt.Printf("----------------\n")
-
-				fmt.Printf("Node %d\n\n", i+1)
-
 				nodeHeader := NodeHeader{}
 
 				binary.Read(f, binary.LittleEndian, &nodeHeader)
-				fmt.Printf("Node Type: %s\n", nodeHeader.Signature)
-				fmt.Printf("Node Length: %d\n", nodeHeader.Length)
 
 				if string(nodeHeader.Signature[:]) == "DATA" {
 					nodeDataHeader := NodeDataHeader{}
@@ -99,19 +108,28 @@ func Read(path string) BINA {
 
 					offsetTableOffset := nodeDataHeader.StringTableOffset + nodeDataHeader.StringTableLength
 
-					// dataBlock := data[:nodeDataHeader.StringTableOffset]
+					dataBlock := data[:nodeDataHeader.StringTableOffset]
 					stringTable := string(data[nodeDataHeader.StringTableOffset:offsetTableOffset])
 					offsetTable := string(data[offsetTableOffset : offsetTableOffset+nodeDataHeader.OffsetTableLength])
 
-					fmt.Printf("%s\n", ReadString(stringTable, 0xC))
-					fmt.Printf("Offset Count: %d\n", len(offsetTable))
+					nodeData := NodeData{additionalData, dataBlock, stringTable, offsetTable}
+					node := Node{nodeHeader, nodeDataHeader, nodeData}
+
+					// fmt.Printf("%s\n", ReadString(stringTable, 0xC))
+
+					nodeList = append(nodeList, node)
 				}
 
 				fmt.Printf("----------------\n")
 			}
 
+			binaFile := BINA{header, nodeList}
+			return binaFile
+
 		} else {
 			fmt.Println("Invalid file.")
+			return BINA{}
 		}
 	}
+	return BINA{}
 }
